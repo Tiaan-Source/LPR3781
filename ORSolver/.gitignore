@@ -1,0 +1,39 @@
+## Ignore build output
+bin/
+obj/
+
+## User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## IDE settings
+.vs/
+.idea/
+.vscode/
+
+## OS cruft
+.DS_Store
+Thumbs.db
+
+## NuGet
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+
+## Logs
+*.log
+
+## Cache / temp
+*.cache
+*.db
+*.pid
+
+## Results folder
+Results/*
+!Results/README.md   # keep placeholder
+
+## Ignore generated exports in Samples
+Samples/*.out.txt
+Samples/*_result*.txt
