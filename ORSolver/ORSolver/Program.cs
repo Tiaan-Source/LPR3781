@@ -55,44 +55,31 @@ internal class Program
 
                 case "4":
                     Console.Clear();
-                    SolveSimplex();
-                    PauseReturn();
-                    break;
-
-                // ADDED: Revised Primal Simplex (Task 2)
-                case "5":
-                    Console.Clear();
-                    SolveRevisedSimplex();
+                    RunLinearSolversMenu();
                     PauseReturn();
                     break;
 
                 // ADDED: Sensitivity submenu (guarded; only after optimal LP solve)
-                case "6":
+                case "5":
                     Console.Clear();
                     RunSensitivityMenu();
                     PauseReturn();
                     break;
 
                 // ADDED: Solve Dual with Revised Simplex (guarded)
-                case "7":
+                case "6":
                     Console.Clear();
                     SolveDualRevised();
                     PauseReturn();
                     break;
 
-                case "8":
+                case "7":
                     Console.Clear();
                     RunIntegerSolversMenu();
                     PauseReturn();
                     break;
 
-                case "9":
-                    Console.Clear();
-                    Export();
-                    PauseReturn();
-                    break;
-
-                case "10":
+                case "8":
                     Console.Clear();
                     ShowHelp();
                     PauseReturn();
@@ -121,16 +108,12 @@ internal class Program
         Console.WriteLine(" 1) Load input file");
         Console.WriteLine(" 2) Show parsed model summary");
         Console.WriteLine(" 3) Show canonical form");
-        Console.WriteLine(" 4) Solve (Primal Simplex)");
-        // ADDED:
-        Console.WriteLine(" 5) Solve (Revised Primal Simplex)  [Product-Form + Price-Out]");
+        Console.WriteLine(" 4) Solve (Linear Programming)");
+        Console.WriteLine(" 5) Sensitivity Analysis (after optimal LP solve)");
         // ADDED (guarded after optimal):
-        Console.WriteLine(" 6) Sensitivity Analysis (after optimal LP solve)");
-        // ADDED (guarded after optimal):
-        Console.WriteLine(" 7) Solve Dual (Revised Primal Simplex)");
-        Console.WriteLine(" 8) Solve (Integer Programming)");
-        Console.WriteLine(" 9) Export results to output file");
-        Console.WriteLine(" 10) Help (input format)");
+        Console.WriteLine(" 6) Solve Dual (Revised Primal Simplex)");
+        Console.WriteLine(" 7) Solve (Integer Programming)");
+        Console.WriteLine(" 8) Help (input format)");
         Console.WriteLine(" 0) Exit");
         Console.Write("Select option: ");
     }
@@ -252,6 +235,13 @@ internal class Program
 
             Console.WriteLine("===== Optimal Solution (Primal Simplex) =====");
             Console.WriteLine(log.FinalReportRounded3());
+
+            Directory.CreateDirectory(ResultsDir);
+            string baseName = (_currentInputBaseName ?? "model") + "_primal.txt";
+            string targetPath = MakeUniquePath(Path.Combine(ResultsDir, baseName));
+
+            var exporter = new ResultExporter();
+            exporter.Export(targetPath, _model, _canonical!, log);
         }
         catch (SimplexException sex)
         {
@@ -298,7 +288,7 @@ internal class Program
             // NOTE: the RevisedPrimalSimplexSolver writes Product-Form & Price-Out lines via exporter
             //       If your method signature differs, adapt to (cm, exporter, _iterLogPath).
             var revised = new RevisedPrimalSimplexSolver();
-            var log = revised.Solve(_canonical, exporter , _iterLogPath); // pass _iterLogPath if your solver expects it
+            var log = revised.Solve(_canonical, exporter, _iterLogPath); // pass _iterLogPath if your solver expects it
             _lastLog = log;
 
             _lastSolveOptimal = true;  // guard unlock
@@ -324,6 +314,43 @@ internal class Program
         }
     }
 
+    private static void RunLinearSolversMenu()
+    {
+        if (_model == null)
+        {
+            Console.WriteLine("Load a model first.");
+            return;
+        }
+
+        Console.WriteLine("\n=== Linear Programming Solvers ===");
+        Console.WriteLine("Choose a solver:");
+        Console.WriteLine("1) Primal Simplex (Tableau)");
+        Console.WriteLine("2) Revised Primal Simplex  [Product-Form + Price-Out]");
+        Console.WriteLine("0) Back");
+        Console.Write("Your choice: ");
+        string? solverChoice = Console.ReadLine();
+
+        switch (solverChoice)
+        {
+            case "1":
+                Console.WriteLine("\nRunning Primal Simplex (Tableau)...");
+                SolveSimplex();            // uses your existing method
+                break;
+
+            case "2":
+                Console.WriteLine("\nRunning Revised Primal Simplex...");
+                SolveRevisedSimplex();     // uses your existing method
+                break;
+
+            case "0":
+                Console.WriteLine("Returning to main menu...");
+                return;
+
+            default:
+                Console.WriteLine("Invalid choice. Returning to main menu.");
+                return;
+        }
+    }
     private static void RunIntegerSolversMenu()
     {
         if (_model == null)
@@ -366,18 +393,12 @@ internal class Program
                 }
 
                 // Export node logs
-                int exported = 0;
-                foreach (var node in result.VisitedNodes)
-                {
-                    if (node.Canonical != null && node.Log != null)
-                    {
-                        var file = Path.Combine(ResultsDir, $"node_{node.NodeId}.txt");
-                        exporter.Export(file, _model, node.Canonical, node.Log);
-                        exported++;
-                    }
-                }
-                Console.WriteLine($"Exported {exported} node logs to 'out' folder");
-
+                Directory.CreateDirectory(ResultsDir);
+                var ipPath = MakeUniquePath(Path.Combine(ResultsDir,
+                              (_currentInputBaseName ?? "model") + "_integer_summary.txt"));
+                exporter.ExportBranchAndBoundSummary(ipPath, _model, _canonical, result);
+                Console.WriteLine($"Integer summary exported to: {ipPath}");
+                
                 _lastLog = result.VisitedNodes.LastOrDefault(n => n.Log != null)?.Log;
             }
             catch (Exception ex)
@@ -399,35 +420,27 @@ internal class Program
                 var knapsack = new KnapsackSolver();
                 var result = knapsack.Solve(_model);
 
-                Console.WriteLine("1) Export results to output file");
-                string? choice = Console.ReadLine();
+                //Console.WriteLine("1) Export results to output file");
+                //string? choice = Console.ReadLine();
 
-                if (choice == "1")
+                if (!Directory.Exists(ResultsDir))
                 {
-                    string resultsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Results"));
-                    if (!Directory.Exists(resultsPath))
-                    {
-                        Directory.CreateDirectory(resultsPath);
-                    }
-
-                    string baseName = _currentInputBaseName + "_knapsack_result";
-                    string targetPath = Path.Combine(resultsPath, baseName + ".txt");
-                    targetPath = MakeUniquePath(targetPath); 
-
-                    try
-                    {
-                        var knapsackExporter = new KnapsackResultExporter();
-                        knapsackExporter.Export(targetPath, _model, result);
-                        Console.WriteLine($"Exported to: {targetPath}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Export error: {ex.Message}");
-                    }
+                    Directory.CreateDirectory(ResultsDir);
                 }
-                else
+
+                string baseName = _currentInputBaseName + "_knapsack_result";
+                string targetPath = Path.Combine(ResultsDir, baseName + ".txt");
+                targetPath = MakeUniquePath(targetPath);
+
+                try
                 {
-                    Console.Clear();
+                    var knapsackExporter = new KnapsackResultExporter();
+                    knapsackExporter.Export(targetPath, _model, result);
+                    Console.WriteLine($"Exported to: {targetPath}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Export error: {ex.Message}");
                 }
             }
             catch (Exception ex)

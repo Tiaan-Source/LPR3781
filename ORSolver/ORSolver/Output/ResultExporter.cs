@@ -1,6 +1,7 @@
 using System.Text;
 using ORSolver.Models;
 using ORSolver.Math.Simplex;
+using ORSolver.Math.Integer;
 
 namespace ORSolver.Output;
 
@@ -13,11 +14,11 @@ public sealed class ResultExporter
         using var sw = new StreamWriter(path, false, Encoding.UTF8);
 
         sw.WriteLine("=====================================================");
-        sw.WriteLine(" solve.exe � Linear/Integer Programming (Person 1)");
+        sw.WriteLine(" solve.exe � Linear/Integer Programming ");
         sw.WriteLine("=====================================================");
         sw.WriteLine();
 
-       
+
         sw.WriteLine(cm.CanonicalText.TrimEnd());
         sw.WriteLine();
 
@@ -44,7 +45,7 @@ public sealed class ResultExporter
         }
         else
         {
-  
+
             sw.WriteLine("===== Initial Tableau (no iterations logged) =====");
             sw.WriteLine(FormatTableau(cm.Tableau, cm.VarNames, 3));
             sw.WriteLine();
@@ -54,7 +55,7 @@ public sealed class ResultExporter
         }
     }
 
-// ADDED:
+    // ADDED:
     public void AppendHeader(string path, string title, int roundDp = 3)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -150,7 +151,7 @@ public sealed class ResultExporter
         return sb.ToString();
     }
 
-   
+
     private static string GenerateMinimalReport(CanonicalizedModel cm)
     {
         var T = cm.Tableau;
@@ -158,7 +159,7 @@ public sealed class ResultExporter
         int cols = T.GetLength(1);
         int rhs = cols - 1;
 
-       
+
         var values = new Dictionary<string, double>();
         for (int j = 0; j < rhs; j++)
         {
@@ -166,7 +167,7 @@ public sealed class ResultExporter
             values[name] = 0.0;
         }
 
-        
+
         for (int i = 0; i < rows - 1 && i < cm.Basis.Length; i++)
         {
             int bcol = cm.Basis[i];
@@ -174,7 +175,7 @@ public sealed class ResultExporter
             values[bname] = T[i, rhs];
         }
 
-        
+
         double z;
         if (cm.Costs != null && cm.Costs.Length > 0 && cm.DecisionsCount > 0)
         {
@@ -196,5 +197,48 @@ public sealed class ResultExporter
         foreach (var kv in values)
             sb.AppendLine($"{kv.Key} = {System.Math.Round(kv.Value, 3):0.000}");
         return sb.ToString();
+    }
+
+    public void ExportBranchAndBoundSummary(
+    string path,
+    LPModel rootModel,
+    CanonicalizedModel? rootCanonical,
+    BranchAndBoundResult result)
+
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, false, Encoding.UTF8);
+
+        sw.WriteLine("=====================================================");
+        sw.WriteLine(" Branch & Bound — Integer Programming Summary");
+        sw.WriteLine("=====================================================\n");
+
+        if (rootCanonical != null)
+        {
+            sw.WriteLine("===== Canonical Form (root) =====");
+            sw.WriteLine(rootCanonical.CanonicalText.TrimEnd());
+            sw.WriteLine();
+        }
+
+        sw.WriteLine("===== Best Solution =====");
+        sw.WriteLine($"Objective: {result.BestObjective:0.000}");
+        sw.WriteLine("x*: " + (result.BestSolution != null
+                     ? string.Join(", ", result.BestSolution.Select((v, i) => $"x{i + 1}={v:0.000}"))
+                     : "(none)"));
+        sw.WriteLine();
+
+        sw.WriteLine("===== Search Stats =====");
+        sw.WriteLine($"Total nodes visited: {result.TotalNodes}");
+        sw.WriteLine($"Integer nodes: {result.VisitedNodes.Count(n => n.IsInteger && !n.IsInfeasible)}");
+        sw.WriteLine($"Infeasible nodes: {result.VisitedNodes.Count(n => n.IsInfeasible)}");
+        sw.WriteLine();
+
+        sw.WriteLine("===== Node Table =====");
+        foreach (var row in result.NodeTable)
+            sw.WriteLine($"Node {row.NodeId}: {row.Status}, Obj={row.Objective:0.000}, Branch={row.BranchVariable}");
+
+        sw.WriteLine();
+        sw.WriteLine("===== Notes =====");
+        sw.WriteLine("Per-node LP tableaux suppressed to keep this report focused on the integer search.");
     }
 }
