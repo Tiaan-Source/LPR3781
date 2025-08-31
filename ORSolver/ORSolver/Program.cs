@@ -240,6 +240,7 @@ internal class Program
         Console.WriteLine("Choose an integer solver:");
         Console.WriteLine("1) Branch & Bound");
         Console.WriteLine("2) Cutting Plane (Gomory)");
+        Console.WriteLine("3) Knapsack");
         Console.Write("Your choice: ");
         string? solverChoice = Console.ReadLine();
 
@@ -293,6 +294,52 @@ internal class Program
             // Cutting Plane implementation remains the same
             // ...
         }
+        else if (solverChoice == "3")
+        {
+            Console.WriteLine("\nRunning Knapsack Branch & Bound...");
+
+            try
+            {
+                var knapsack = new KnapsackSolver();
+                var result = knapsack.Solve(_model);
+
+                Console.WriteLine("1) Export results to output file");
+                string? choice = Console.ReadLine();
+
+                if (choice == "1")
+                {
+                    string resultsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Results"));
+                    if (!Directory.Exists(resultsPath))
+                    {
+                        Directory.CreateDirectory(resultsPath);
+                    }
+
+                    string baseName = _currentInputBaseName + "_knapsack_result";
+                    string targetPath = Path.Combine(resultsPath, baseName + ".txt");
+                    targetPath = MakeUniquePath(targetPath); 
+
+                    try
+                    {
+                        var knapsackExporter = new KnapsackResultExporter();
+                        knapsackExporter.Export(targetPath, _model, result);
+                        Console.WriteLine($"Exported to: {targetPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Export error: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Console.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Knapsack Solver failed: {ex.Message}");
+            }
+        }
+
         else
         {
             Console.WriteLine("Invalid choice. Returning to main menu.");
