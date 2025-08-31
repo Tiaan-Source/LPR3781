@@ -13,7 +13,7 @@ public sealed class ResultExporter
         using var sw = new StreamWriter(path, false, Encoding.UTF8);
 
         sw.WriteLine("=====================================================");
-        sw.WriteLine(" solve.exe — Linear/Integer Programming (Person 1)");
+        sw.WriteLine(" solve.exe ï¿½ Linear/Integer Programming (Person 1)");
         sw.WriteLine("=====================================================");
         sw.WriteLine();
 
@@ -54,6 +54,71 @@ public sealed class ResultExporter
         }
     }
 
+// ADDED:
+    public void AppendHeader(string path, string title, int roundDp = 3)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, true, Encoding.UTF8);
+        sw.WriteLine($"==== {title} ====");
+    }
+
+    // ADDED:
+    public void AppendPriceOut(string path, PriceOutIteration it, int roundDp = 3)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, true, Encoding.UTF8);
+
+        string F(double v) => System.Math.Round(v, roundDp).ToString($"F{roundDp}");
+
+        sw.WriteLine($"[Price-Out] Iter {it.Iteration} | Entering: col {it.EnteringCol}");
+        sw.WriteLine("y: " + string.Join(", ", it.DualY.Select(F)));
+        sw.WriteLine("r: " + string.Join(", ", it.ReducedCosts.Select(F)));
+        sw.WriteLine($"z: {F(it.Z)}");
+        sw.WriteLine();
+    }
+
+    // ADDED:
+    public void AppendProductForm(string path, ProductFormIteration it, int roundDp = 3)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, true, Encoding.UTF8);
+
+        string F(double v) => System.Math.Round(v, roundDp).ToString($"F{roundDp}");
+
+        sw.WriteLine($"[Product-Form] Iter {it.Iteration} | Leaving: basis pos {it.LeavingBasisPos}");
+        sw.WriteLine("d: " + string.Join(", ", it.DirectionD.Select(F)));
+        sw.WriteLine("xB(before): " + string.Join(", ", it.XbBefore.Select(F)));
+        sw.WriteLine($"theta*: {F(it.StepSize)}");
+        sw.WriteLine("xB(after): " + string.Join(", ", it.XbAfter.Select(F)));
+        sw.WriteLine();
+    }
+
+    // ADDED:
+    public void AppendFooterOptimal(string path, double z, int roundDp = 3)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, true, Encoding.UTF8);
+        sw.WriteLine($"==== OPTIMAL z = {System.Math.Round(z, roundDp).ToString($"F{roundDp}")} ====");
+        sw.WriteLine();
+    }
+
+    // ADDED:
+    public void AppendFooterUnbounded(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, true, Encoding.UTF8);
+        sw.WriteLine("==== UNBOUNDED ====");
+        sw.WriteLine();
+    }
+
+    // ADDED:
+    public void AppendFooterInfeasible(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var sw = new StreamWriter(path, true, Encoding.UTF8);
+        sw.WriteLine("==== INFEASIBLE ====");
+        sw.WriteLine();
+    }
 
 
     private static string FormatTableau(double[,] T, string[] varNames, int round)

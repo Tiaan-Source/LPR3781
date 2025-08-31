@@ -4,6 +4,9 @@ using ORSolver.Math.Simplex;
 using ORSolver.Output;
 using ORSolver.Math.Integer;
 using ORSolver.Utilities;
+// ADDED:
+using ORSolver.Math.Duality;        // dual model builder for Task 2
+using ORSolver.UI;                  // SensitivityMenu (guarded)
 
 namespace ORSolver;
 
@@ -13,7 +16,13 @@ internal class Program
     private static CanonicalizedModel? _canonical;
     private static SimplexSolveLog? _lastLog;
     private static string? _currentInputBaseName;
+    // ADDED:
+    private static bool _lastSolveOptimal = false;      // only enable sensitivity/duality after an optimal LP solve
+    // ADDED:
+    private static string? _iterLogPath;                // where Product-Form / Price-Out iterations are appended
 
+    private static readonly string ResultsDir =
+    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Results"));
     static void Main(string[] args)
     {
         bool running = true;
@@ -50,19 +59,40 @@ internal class Program
                     PauseReturn();
                     break;
 
+                // ADDED: Revised Primal Simplex (Task 2)
                 case "5":
+                    Console.Clear();
+                    SolveRevisedSimplex();
+                    PauseReturn();
+                    break;
+
+                // ADDED: Sensitivity submenu (guarded; only after optimal LP solve)
+                case "6":
+                    Console.Clear();
+                    RunSensitivityMenu();
+                    PauseReturn();
+                    break;
+
+                // ADDED: Solve Dual with Revised Simplex (guarded)
+                case "7":
+                    Console.Clear();
+                    SolveDualRevised();
+                    PauseReturn();
+                    break;
+
+                case "8":
                     Console.Clear();
                     RunIntegerSolversMenu();
                     PauseReturn();
                     break;
 
-                case "6":
+                case "9":
                     Console.Clear();
                     Export();
                     PauseReturn();
                     break;
 
-                case "7":
+                case "10":
                     Console.Clear();
                     ShowHelp();
                     PauseReturn();
@@ -92,9 +122,15 @@ internal class Program
         Console.WriteLine(" 2) Show parsed model summary");
         Console.WriteLine(" 3) Show canonical form");
         Console.WriteLine(" 4) Solve (Primal Simplex)");
-        Console.WriteLine(" 5) Solve (Integer Programming)");
-        Console.WriteLine(" 6) Export results to output file");
-        Console.WriteLine(" 7) Help (input format)");
+        // ADDED:
+        Console.WriteLine(" 5) Solve (Revised Primal Simplex)  [Product-Form + Price-Out]");
+        // ADDED (guarded after optimal):
+        Console.WriteLine(" 6) Sensitivity Analysis (after optimal LP solve)");
+        // ADDED (guarded after optimal):
+        Console.WriteLine(" 7) Solve Dual (Revised Primal Simplex)");
+        Console.WriteLine(" 8) Solve (Integer Programming)");
+        Console.WriteLine(" 9) Export results to output file");
+        Console.WriteLine(" 10) Help (input format)");
         Console.WriteLine(" 0) Exit");
         Console.Write("Select option: ");
     }
@@ -152,6 +188,8 @@ internal class Program
             _model = InputModelParser.Parse(text);
             _canonical = null;
             _lastLog = null;
+            _lastSolveOptimal = false;    // ADDED: reset guard on new load
+            _iterLogPath = null;          // ADDED: reset Task-2 log path
 
             _currentInputBaseName = Path.GetFileNameWithoutExtension(path);
 
@@ -209,6 +247,9 @@ internal class Program
             var log = solver.Solve(_canonical);
             _lastLog = log;
 
+            // ADDED:
+            _lastSolveOptimal = true;  // enable sensitivity/duality for the session
+
             Console.WriteLine("===== Optimal Solution (Primal Simplex) =====");
             Console.WriteLine(log.FinalReportRounded3());
         }
@@ -221,10 +262,65 @@ internal class Program
                 Console.WriteLine("--- Last tableau before failure ---");
                 Console.WriteLine(sex.Log.LatestTableauAsText(3));
             }
+            // ADDED:
+            _lastSolveOptimal = false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Solve error: {ex.Message}");
+            // ADDED:
+            _lastSolveOptimal = false;
+        }
+    }
+
+    // ADDED: Revised Primal Simplex with Product-Form + Price-Out logging via ResultExporter
+    static void SolveRevisedSimplex()
+    {
+        if (_model == null)
+        {
+            Console.WriteLine("Load a model first.");
+            return;
+        }
+        try
+        {
+            var builder = new CanonicalFormBuilder();
+            _canonical = builder.Build(_model);
+
+            // choose an iteration log file alongside the normal Results export
+            Directory.CreateDirectory(ResultsDir);
+            string baseName = (_currentInputBaseName ?? "model") + "_iterations";
+            string targetPath = Path.Combine(ResultsDir, baseName + ".txt");
+            targetPath = MakeUniquePath(targetPath);
+            _iterLogPath = targetPath;
+
+            var exporter = new ResultExporter();
+
+            // NOTE: the RevisedPrimalSimplexSolver writes Product-Form & Price-Out lines via exporter
+            //       If your method signature differs, adapt to (cm, exporter, _iterLogPath).
+            var revised = new RevisedPrimalSimplexSolver();
+            var log = revised.Solve(_canonical, exporter , _iterLogPath); // pass _iterLogPath if your solver expects it
+            _lastLog = log;
+
+            _lastSolveOptimal = true;  // guard unlock
+            Console.WriteLine("===== Optimal Solution (Revised Primal Simplex) =====");
+            Console.WriteLine(log.FinalReportRounded3());
+            Console.WriteLine($"\n(Product-Form & Price-Out iterations appended to: {_iterLogPath ?? "Results/…/model_iterations.txt"})");
+        }
+        catch (SimplexException sex)
+        {
+            Console.WriteLine($"Simplex status: {sex.Message}");
+            if (sex.Log != null)
+            {
+                _lastLog = sex.Log;
+                Console.WriteLine("--- Last tableau before failure ---");
+                Console.WriteLine(sex.Log.LatestTableauAsText(3));
+            }
+            _lastSolveOptimal = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Solve error: {ex.Message}");
+            _lastSolveOptimal = false;
         }
     }
 
@@ -243,7 +339,7 @@ internal class Program
         Console.Write("Your choice: ");
         string? solverChoice = Console.ReadLine();
 
-        Directory.CreateDirectory("out");
+        Directory.CreateDirectory(ResultsDir);
         var exporter = new ResultExporter();
 
         if (solverChoice == "1")
@@ -274,7 +370,7 @@ internal class Program
                 {
                     if (node.Canonical != null && node.Log != null)
                     {
-                        var file = Path.Combine("out", $"node_{node.NodeId}.txt");
+                        var file = Path.Combine(ResultsDir, $"node_{node.NodeId}.txt");
                         exporter.Export(file, _model, node.Canonical, node.Log);
                         exported++;
                     }
@@ -320,14 +416,13 @@ internal class Program
             _canonical = builder.Build(_model);
         }
 
-        string resultsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Results"));
-        if (!Directory.Exists(resultsPath))
+        if (!Directory.Exists(ResultsDir))
         {
-            Directory.CreateDirectory(resultsPath);
+            Directory.CreateDirectory(ResultsDir);
         }
 
         string baseName = _currentInputBaseName + "_result";
-        string targetPath = Path.Combine(resultsPath, baseName + ".txt");
+        string targetPath = Path.Combine(ResultsDir, baseName + ".txt");
         targetPath = MakeUniquePath(targetPath);
 
         try
@@ -335,6 +430,11 @@ internal class Program
             var exporter = new ResultExporter();
             exporter.Export(targetPath, _model, _canonical!, _lastLog);
             Console.WriteLine($"Exported to: {targetPath}");
+            // ADDED: also let user know where Task-2 iteration log is (if any)
+            if (!string.IsNullOrWhiteSpace(_iterLogPath) && File.Exists(_iterLogPath))
+            {
+                Console.WriteLine($"Task-2 iteration log: {_iterLogPath}");
+            }
         }
         catch (Exception ex)
         {
@@ -384,5 +484,51 @@ Notes:
 - Use '.' for decimal. Do not include commas.
 - Extra blank lines are ignored.
 """);
+    }
+    // ADDED: Sensitivity submenu (guarded)
+    private static void RunSensitivityMenu()
+    {
+        if (!_lastSolveOptimal || _canonical == null || _lastLog == null)
+        {
+            Console.WriteLine("Solve a linear model to optimality first (Primal or Revised).");
+            return;
+        }
+
+        var finalBasis = _lastLog.BasisHistory.Last();
+        var menu = new SensitivityMenu(_canonical, finalBasis, roundDp: 3);
+        menu.Show();
+    }
+
+    // ADDED: Solve Dual with Revised Primal Simplex (guarded)
+    private static void SolveDualRevised()
+    {
+        if (!_lastSolveOptimal || _canonical == null)
+        {
+            Console.WriteLine("Solve the primal model to optimality first.");
+            return;
+        }
+
+        try
+        {
+            var dual = DualBuilder.BuildDual(_canonical);
+            var dualCanonical = new CanonicalFormBuilder().Build(dual);
+
+            // append dual iterations to same Task-2 log file when available
+            Directory.CreateDirectory(ResultsDir);
+            if (string.IsNullOrWhiteSpace(_iterLogPath))
+            {
+                string baseName = (_currentInputBaseName ?? "model") + "_iterations";
+                _iterLogPath = MakeUniquePath(Path.Combine(ResultsDir, baseName + ".txt"));
+            }
+
+            var exporter = new ResultExporter();
+            var solver = new RevisedPrimalSimplexSolver();
+            var dlog = solver.Solve(dualCanonical, exporter, _iterLogPath); // pass _iterLogPath if required by your solver
+            Console.WriteLine("Dual model solved (Revised Primal Simplex).");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Dual solve error: {ex.Message}");
+        }
     }
 }
